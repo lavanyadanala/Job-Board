@@ -1,0 +1,216 @@
+1. Backend Code (Node.js + Express + MongoDB)
+🔹 Setup Backend
+Create a folder named backend/, then add the following files.
+
+1️⃣ Install Dependencies
+Run:
+
+sh
+Copy
+Edit
+mkdir backend && cd backend
+npm init -y
+npm install express mongoose dotenv cors bcryptjs jsonwebtoken
+2️⃣ Setup Express Server (server.js)
+📄 backend/server.js
+
+js
+Copy
+Edit
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+
+dotenv.config();
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log("✅ MongoDB Connected"))
+.catch(err => console.log("❌ Error: ", err));
+
+// Import Routes
+import jobRoutes from "./routes/jobRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+app.use("/api/jobs", jobRoutes);
+app.use("/api/auth", authRoutes);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+3️⃣ User Model (models/User.js)
+📄 backend/models/User.js
+
+js
+Copy
+Edit
+import mongoose from "mongoose";
+
+const UserSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+  role: { type: String, enum: ["job_seeker", "employer"], default: "job_seeker" },
+});
+
+export default mongoose.model("User", UserSchema);
+
+4️⃣ Job Model (models/Job.js)
+📄 backend/models/Job.js
+
+js
+Copy
+Edit
+import mongoose from "mongoose";
+
+const JobSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  location: String,
+  category: String,
+  salary: Number,
+  company: String,
+  postedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export default mongoose.model("Job", JobSchema);
+
+5️⃣ Authentication Routes (routes/authRoutes.js)
+📄 backend/routes/authRoutes.js
+
+js
+Copy
+Edit
+import express from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import User from "../models/User.js";
+
+const router = express.Router();
+
+// Register
+router.post("/register", async (req, res) => {
+  const { name, email, password, role } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ name, email, password: hashedPassword, role });
+    await user.save();
+    res.status(201).json({ message: "User registered successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Login
+router.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "User not found" });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    res.json({ token, user: { id: user._id, name: user.name, role: user.role } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
+
+6️⃣ Job Routes (routes/jobRoutes.js)
+📄 backend/routes/jobRoutes.js
+
+js
+Copy
+Edit
+import express from "express";
+import Job from "../models/Job.js";
+
+const router = express.Router();
+
+// Create Job
+router.post("/", async (req, res) => {
+  try {
+    const job = new Job(req.body);
+    await job.save();
+    res.status(201).json(job);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get All Jobs
+router.get("/", async (req, res) => {
+  const jobs = await Job.find();
+  res.json(jobs);
+});
+
+export default router;
+
+📌 2. Frontend Code (Next.js + Tailwind CSS)
+Create a folder named frontend/ and set up Next.js.
+
+1️⃣ Install Dependencies
+Run:
+
+sh
+Copy
+Edit
+npx create-next-app frontend
+cd frontend
+npm install axios tailwindcss react-icons
+
+2️⃣ Configure Tailwind CSS
+📄 frontend/tailwind.config.js
+
+js
+Copy
+Edit
+module.exports = {
+  content: ["./pages/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+
+3️⃣ Create Job Listing Page
+📄 frontend/pages/index.js
+
+js
+Copy
+Edit
+import { useEffect, useState } from "react";
+import axios from "axios";
+
+export default function Home() {
+  const [jobs, setJobs] = useState([]);
+
+  useEffect(() => {
+    axios.get("http://localhost:5000/api/jobs")
+      .then(res => setJobs(res.data))
+      .catch(err => console.log(err));
+  }, []);
+
+  return (
+    <div className="p-5">
+      <h1 className="text-3xl font-bold">Job Listings</h1>
+      {jobs.map(job => (
+        <div key={job._id} className="border p-3 mt-3">
+          <h2 className="text-xl font-semibold">{job.title}</h2>
+          <p>{job.description}</p>
+          <span className="text-gray-500">{job.location}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
